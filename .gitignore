@@ -1,0 +1,5 @@
+/target/
+/daemon/target/
+/tray/target/
+/keystore
+*.log

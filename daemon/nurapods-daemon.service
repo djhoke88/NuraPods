@@ -1,0 +1,12 @@
+[Unit]
+Description=NuraPods Bluetooth metadata daemon
+After=bluetooth.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/nurapods-daemon daemon "%h/.local/share/nurapods/keystore"
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target
