@@ -1,4 +1,4 @@
-use std::{collections::HashMap, os::unix::fs::OpenOptionsExt, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::{Context, Result};
 use bluer::Address;

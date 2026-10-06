@@ -1,9 +1,16 @@
-use std::{os::{linux::net::SocketAddrExt, unix::net::SocketAddr}, path::PathBuf, time::Duration};
+use std::{
+	os::{linux::net::SocketAddrExt, unix::net::SocketAddr},
+	path::PathBuf,
+	time::Duration,
+};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use log::LevelFilter;
-use tokio::{io::{AsyncWriteExt, stdout}, net::UnixStream};
+use tokio::{
+	io::{AsyncWriteExt, stdout},
+	net::UnixStream,
+};
 
 use crate::daemon::Daemon;
 
@@ -75,7 +82,7 @@ async fn main() -> Result<()> {
 		}
 		Commands::Status { short, json } => {
 			let unix = std::os::unix::net::UnixStream::connect_addr(
-			&SocketAddr::from_abstract_name("dev.nurapods").unwrap(),
+				&SocketAddr::from_abstract_name("dev.nurapods").unwrap(),
 			)
 			.context("failed to bind to daemon unix socket")?;
 			unix.set_nonblocking(true)
@@ -83,10 +90,20 @@ async fn main() -> Result<()> {
 			let unix = UnixStream::from_std(unix).context("failed to convert to tokio")?;
 
 			let (mut rx, mut tx) = unix.into_split();
-			tx.write_all(if json { b"json" } else if short { b"status" } else { b"detailed" }).await.context("failed to send to daemon")?;
+			tx.write_all(if json {
+				b"json"
+			} else if short {
+				b"status"
+			} else {
+				b"detailed"
+			})
+			.await
+			.context("failed to send to daemon")?;
 			tx.shutdown().await.context("failed to close daemon conn")?;
 
-			tokio::io::copy(&mut rx, &mut stdout()).await.context("failed to forward response")?;
+			tokio::io::copy(&mut rx, &mut stdout())
+				.await
+				.context("failed to forward response")?;
 		}
 	}
 

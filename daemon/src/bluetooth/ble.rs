@@ -120,7 +120,12 @@ impl BleClient {
 								.to_vec(),
 						);
 						if let Some((batteries, single_battery)) = super::plain_adv::decode(&data) {
-							self.events.send(DaemonEvent::BleAdvertisementPlain(mac, batteries, single_battery))
+							self.events
+								.send(DaemonEvent::BleAdvertisementPlain(
+									mac,
+									batteries,
+									single_battery,
+								))
 								.context("failed to send plain BLE battery event")?;
 							return anyhow::Ok(());
 						}

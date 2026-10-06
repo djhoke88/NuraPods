@@ -15,7 +15,13 @@ The BLE-only fallback reports directly to the tray. BlueZ battery publication is
 
 ## Build and install
 
-Requirements: Ubuntu with BlueZ, a BLE-capable Bluetooth adapter, Rust stable, `pkg-config`, `libgtk-3-dev`, and `libayatana-appindicator3-dev`. On GNOME, enable the Ubuntu AppIndicator extension to show the tray icon.
+Requirements: Ubuntu with BlueZ, a BLE-capable Bluetooth adapter, Rust stable, `pkg-config`, `libbluetooth-dev`, `libgtk-3-dev`, and `libayatana-appindicator3-dev`. Install the native build dependencies with:
+
+```sh
+sudo apt install pkg-config libbluetooth-dev libgtk-3-dev libayatana-appindicator3-dev
+```
+
+On GNOME, enable the Ubuntu AppIndicator extension to show the tray icon.
 
 ```sh
 ./install.sh

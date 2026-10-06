@@ -1,4 +1,4 @@
-use std::{collections::HashMap, pin::pin, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::{Context, Result};
 use bluer::{Adapter, AdapterEvent, Address, Device, DeviceEvent, DeviceProperty, Uuid};

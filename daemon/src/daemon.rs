@@ -8,10 +8,10 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use serde_json::{Value, json};
 use bluer::{Adapter, Address, Session};
 use futures::{FutureExt, StreamExt, stream::FuturesUnordered};
 use log::{debug, info, trace};
+use serde_json::{Value, json};
 use tokio::{
 	io::{AsyncReadExt, AsyncWriteExt},
 	net::UnixListener,
@@ -154,20 +154,27 @@ impl Daemon {
 		match status {
 			BatteryStatus::Charging(level) => json!({ "level": level, "charging": true }),
 			BatteryStatus::Discharging(level) => json!({ "level": level, "charging": false }),
-			BatteryStatus::Unknown | BatteryStatus::Disconnected => json!({ "level": null, "charging": null }),
+			BatteryStatus::Unknown | BatteryStatus::Disconnected => {
+				json!({ "level": null, "charging": null })
+			}
 		}
 	}
 
 	fn status_json(devices: &HashMap<Address, DeviceState>) -> Value {
-		let devices = devices.iter().map(|(address, state)| json!({
-			"address": address.to_string(),
-			"name": state.name,
-			"connected": state.connected,
-			"single_battery": state.single_battery,
-			"case": Self::battery_json(state.battery.case),
-			"left": Self::battery_json(state.battery.left),
-			"right": Self::battery_json(state.battery.right),
-		})).collect::<Vec<_>>();
+		let devices = devices
+			.iter()
+			.map(|(address, state)| {
+				json!({
+					"address": address.to_string(),
+					"name": state.name,
+					"connected": state.connected,
+					"single_battery": state.single_battery,
+					"case": Self::battery_json(state.battery.case),
+					"left": Self::battery_json(state.battery.left),
+					"right": Self::battery_json(state.battery.right),
+				})
+			})
+			.collect::<Vec<_>>();
 		json!({ "devices": devices })
 	}
 
