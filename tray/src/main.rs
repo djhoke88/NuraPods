@@ -1,10 +1,9 @@
 use std::{
+    env,
     ffi::{CString, c_char, c_int, c_void},
     io::{Read, Write},
-    os::{
-        linux::net::SocketAddrExt,
-        unix::net::{SocketAddr, UnixStream},
-    },
+    os::unix::net::UnixStream,
+    path::PathBuf,
     time::Duration,
 };
 
@@ -85,6 +84,13 @@ fn cstring(value: &str) -> CString {
     CString::new(value.replace('\0', "")).expect("sanitized C string")
 }
 
+fn socket_path() -> PathBuf {
+    let runtime_dir = env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(env::temp_dir);
+    runtime_dir.join(format!("nurapods-{}.sock", unsafe { libc::getuid() }))
+}
+
 fn component(label: &str, part: &Component) -> String {
     match (part.level, part.charging) {
         (Some(level), Some(true)) => format!("{label} {level}% ⚡"),
@@ -94,8 +100,7 @@ fn component(label: &str, part: &Component) -> String {
 }
 
 fn fetch_status() -> Result<Vec<String>, String> {
-    let address = SocketAddr::from_abstract_name("dev.nurapods").map_err(|e| e.to_string())?;
-    let mut stream = UnixStream::connect_addr(&address).map_err(|e| e.to_string())?;
+    let mut stream = UnixStream::connect(socket_path()).map_err(|e| e.to_string())?;
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .map_err(|e| e.to_string())?;

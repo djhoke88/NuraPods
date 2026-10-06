@@ -3,7 +3,7 @@ use std::sync::Arc;
 use aes::Aes128;
 use anyhow::{Context, Result, bail};
 use bluer::{
-	Adapter, AddressType,
+	Adapter, AdapterEvent, AddressType, DiscoveryFilter, DiscoveryTransport,
 	monitor::{Monitor, MonitorEvent, Pattern, Type, data_type::MANUFACTURER_SPECIFIC_DATA},
 };
 use bytes::Bytes;
@@ -69,14 +69,101 @@ impl BleClient {
 		Ok(Bytes::from(block.to_vec()))
 	}
 
-	pub async fn monitor(self) -> Result<()> {
-		let monitor_manager = self
-			.adapter
-			.monitor()
-			.await
-			.context("failed to get monitor manager")?;
+	async fn process_advertisement(
+		&self,
+		mac: bluer::Address,
+		mac_type: AddressType,
+		data: Bytes,
+	) -> Result<()> {
+		if mac_type == AddressType::LeRandom
+			&& let Some((addr, keys)) = self
+				.keystore
+				.find(|keys| verify_rpa(mac.0, keys.irk.to_vec()))
+				.await
+		{
+			let decrypted = Self::decrypt_advertisement(data.clone(), keys.enc_key)
+				.context("failed to decrypt advertisement")?;
+			self.events
+				.send(DaemonEvent::BleAdvertisement(
+					addr,
+					ProximityPairingPacket::decode(data, decrypted)
+						.context("failed to decode advertisement")?,
+				))
+				.context("failed to send daemon event")?;
+			return Ok(());
+		}
 
-		let mut monitor = monitor_manager
+		if let Some((batteries, single_battery)) = super::plain_adv::decode(&data) {
+			self.events
+				.send(DaemonEvent::BleAdvertisementPlain(
+					mac,
+					batteries,
+					single_battery,
+				))
+				.context("failed to send plain BLE battery event")?;
+		}
+		Ok(())
+	}
+
+	async fn monitor_with_discovery(&self) -> Result<()> {
+		self.adapter
+			.set_discovery_filter(DiscoveryFilter {
+				transport: DiscoveryTransport::Le,
+				duplicate_data: true,
+				..Default::default()
+			})
+			.await
+			.context("failed to configure standard BLE discovery")?;
+		let mut devices = self
+			.adapter
+			.discover_devices_with_changes()
+			.await
+			.context("failed to start standard BLE discovery")?;
+		while let Some(event) = devices.next().await {
+			let AdapterEvent::DeviceAdded(address) = event else {
+				continue;
+			};
+			let ret = async {
+				let device = self
+					.adapter
+					.device(address)
+					.context("failed to get device")?;
+				let mac = device
+					.remote_address()
+					.await
+					.context("failed to get remote address")?;
+				let mac_type = device
+					.address_type()
+					.await
+					.context("failed to get address type")?;
+				let data_map = device
+					.manufacturer_data()
+					.await
+					.context("failed to get manufacturer data")?;
+				if let Some(data) = data_map.and_then(|data| data.get(&0x004C).cloned()) {
+					self.process_advertisement(mac, mac_type, Bytes::from(data))
+						.await?;
+				}
+				anyhow::Ok(())
+			}
+			.await;
+			if let Err(error) = ret {
+				trace!("standard BLE discovery event for {address} was skipped: {error:#}");
+			}
+		}
+		Ok(())
+	}
+
+	pub async fn monitor(self) -> Result<()> {
+		let monitor_manager = match self.adapter.monitor().await {
+			Ok(manager) => manager,
+			Err(error) => {
+				warn!("BLE advertisement monitors unavailable ({error}); using standard discovery");
+				return self.monitor_with_discovery().await;
+			}
+		};
+
+		let mut monitor = match monitor_manager
 			.register(Monitor {
 				monitor_type: Type::OrPatterns,
 				patterns: Some(vec![Pattern::new(
@@ -87,7 +174,15 @@ impl BleClient {
 				..Default::default()
 			})
 			.await
-			.context("failed to create monitor for apple audio")?;
+		{
+			Ok(monitor) => monitor,
+			Err(error) => {
+				warn!(
+					"BLE advertisement monitor registration failed ({error}); using standard discovery"
+				);
+				return self.monitor_with_discovery().await;
+			}
+		};
 
 		while let Some(event) = monitor.next().await {
 			match event {
@@ -119,34 +214,7 @@ impl BleClient {
 								.context("device didn't have apple manufacturer data")?
 								.to_vec(),
 						);
-						if let Some((batteries, single_battery)) = super::plain_adv::decode(&data) {
-							self.events
-								.send(DaemonEvent::BleAdvertisementPlain(
-									mac,
-									batteries,
-									single_battery,
-								))
-								.context("failed to send plain BLE battery event")?;
-							return anyhow::Ok(());
-						}
-
-						if mac_type == AddressType::LeRandom
-							&& let Some((addr, keys)) = self
-								.keystore
-								.find(|keys| verify_rpa(mac.0, keys.irk.to_vec()))
-								.await
-						{
-							let decrypted = Self::decrypt_advertisement(data.clone(), keys.enc_key)
-								.context("failed to decrypt advertisement")?;
-
-							self.events
-								.send(DaemonEvent::BleAdvertisement(
-									addr,
-									ProximityPairingPacket::decode(data, decrypted)
-										.context("failed to decode advertisement")?,
-								))
-								.context("failed to send daemon event")?;
-						}
+						self.process_advertisement(mac, mac_type, data).await?;
 
 						anyhow::Ok(())
 					})()

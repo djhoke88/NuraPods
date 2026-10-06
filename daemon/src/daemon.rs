@@ -1,20 +1,20 @@
 use std::{
 	collections::HashMap,
-	os::{linux::net::SocketAddrExt, unix::net::SocketAddr},
+	os::unix::fs::PermissionsExt,
 	path::PathBuf,
 	pin::Pin,
 	sync::Arc,
 	time::{Duration, Instant},
 };
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use bluer::{Adapter, Address, Session};
 use futures::{FutureExt, StreamExt, stream::FuturesUnordered};
 use log::{debug, info, trace};
 use serde_json::{Value, json};
 use tokio::{
 	io::{AsyncReadExt, AsyncWriteExt},
-	net::UnixListener,
+	net::{UnixListener, UnixStream},
 	sync::mpsc,
 };
 
@@ -195,13 +195,21 @@ impl Daemon {
 
 		let mut devices = HashMap::new();
 
-		let unix = std::os::unix::net::UnixListener::bind_addr(
-			&SocketAddr::from_abstract_name("dev.nurapods").unwrap(),
-		)
-		.context("failed to bind to daemon unix socket")?;
-		unix.set_nonblocking(true)
-			.context("failed to set nonblocking")?;
-		let unix = UnixListener::from_std(unix).context("failed to convert to tokio")?;
+		let socket_path = crate::ipc::socket_path();
+		if socket_path.exists() {
+			match UnixStream::connect(&socket_path).await {
+				Ok(_) => bail!("another NuraPods daemon is already running"),
+				Err(error) if error.kind() == std::io::ErrorKind::ConnectionRefused => {
+					tokio::fs::remove_file(&socket_path)
+						.await
+						.context("failed to remove stale daemon socket")?;
+				}
+				Err(error) => return Err(error).context("failed to check existing daemon socket"),
+			}
+		}
+		let unix = UnixListener::bind(&socket_path).context("failed to bind to daemon socket")?;
+		std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))
+			.context("failed to restrict daemon socket permissions")?;
 
 		info!("running");
 

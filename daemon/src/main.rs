@@ -1,8 +1,4 @@
-use std::{
-	os::{linux::net::SocketAddrExt, unix::net::SocketAddr},
-	path::PathBuf,
-	time::Duration,
-};
+use std::{path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -17,6 +13,7 @@ use crate::daemon::Daemon;
 mod battery;
 mod bluetooth;
 mod daemon;
+mod ipc;
 mod keystore;
 
 #[derive(Debug, Parser)]
@@ -81,13 +78,9 @@ async fn main() -> Result<()> {
 				.context("failed to monitor airpods devices")?;
 		}
 		Commands::Status { short, json } => {
-			let unix = std::os::unix::net::UnixStream::connect_addr(
-				&SocketAddr::from_abstract_name("dev.nurapods").unwrap(),
-			)
-			.context("failed to bind to daemon unix socket")?;
-			unix.set_nonblocking(true)
-				.context("failed to set nonblocking")?;
-			let unix = UnixStream::from_std(unix).context("failed to convert to tokio")?;
+			let unix = UnixStream::connect(crate::ipc::socket_path())
+				.await
+				.context("failed to connect to NuraPods daemon socket")?;
 
 			let (mut rx, mut tx) = unix.into_split();
 			tx.write_all(if json {

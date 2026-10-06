@@ -5,6 +5,7 @@ NuraPods is an Ubuntu system-tray app for AirPods battery status, backed by a sm
 ## MVP
 
 - continuously watches Apple Bluetooth LE advertisements and the AirPods L2CAP metadata channel;
+- falls back to standard BlueZ LE discovery when its experimental advertisement-monitor API is unavailable;
 - reads left, right, and case battery levels when available;
 - exposes the aggregate battery through BlueZ and component details to the tray;
 - runs as a user systemd service, with the tray app started at login.
@@ -41,7 +42,7 @@ journalctl --user -u nurapods-daemon -f
 ~/.local/bin/nurapods-daemon status --json
 ```
 
-The tray refreshes every three seconds. Its menu includes an explicit refresh and quit action.
+The tray refreshes every three seconds. It reads a machine-readable status response from the daemon over a local Unix socket. Its menu includes an explicit refresh and quit action.
 
 ## Project layout
 
